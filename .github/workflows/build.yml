@@ -19,30 +19,41 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-      - name: NPM Install
+      - name: npm install dependency
         run: npm install # Add your specific npm install command
 
-      - name: Docker Login
-        run: docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Docker Scout Scan
-        run: |
-          docker-scout quickview fs://.
-          docker-scout cves fs://.
+      - name: Trivy file scan
+        run: trivy fs . > trivyfs.txt
 
       - name: Docker build and push
         run: |
           # Run commands to build and push Docker images
           docker build -t myntra .
-          docker tag myntra sevenajay/myntra:latest
+          docker tag myntra nusratdev/myntra:latest
           docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-          docker push sevenajay/myntra:latest
+          docker push nusratdev/myntra:latest
         env:
           DOCKER_CLI_ACI: 1
 
-      - name: Docker Scout Image Scan
-        run: |
-          docker-scout quickview sevenajay/myntra:latest
-          docker-scout cves sevenajay/myntra:latest
+      - name: Image scan
+        run: trivy image nusratdev/myntra:latest > trivyimage.txt
 
-      
+  
+  deploy:
+   needs: build-analyze-scan   
+   runs-on: [self-hosted]
+   steps:
+      - name: docker pull image
+        run: docker pull nusratdev/myntra:latest
+
+      - name: Image scan
+        run: trivy image nusratdev/myntra:latest > trivyimagedeploy.txt  
+
+      - name: Deploy to container
+        run: docker run -d --name game -p 3000:3000 nusratdev/myntra:latest
+
+      - name: Update kubeconfig
+        run: aws eks --region us-east-1 update-kubeconfig --name EKS_CLOUD
+
+      - name: Deploy to kubernetes
+        run: kubectl apply -f deployment-service.yml    
